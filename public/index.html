@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 适合度判断器</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    textarea { width: 100%; min-height: 80px; padding: 10px; font-size: 1rem; box-sizing: border-box; }
+    button { margin-top: 12px; padding: 10px 20px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .card { margin-top: 24px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; display: none; }
+    .score { font-size: 3rem; font-weight: bold; }
+    .reason { margin-top: 8px; font-size: 1.1rem; }
+    .source { margin-top: 12px; font-size: 0.85rem; color: #888; }
+    .error { color: #c00; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>AI 适合度判断器</h1>
+  <p>输入一个问题或项目，看看它有多适合用 AI 来解决。</p>
+  <textarea id="input" placeholder="例如：帮我写一封道歉邮件"></textarea>
+  <button id="submit">判断</button>
+  <div id="error" class="error"></div>
+  <div id="card" class="card">
+    <div class="score"><span id="score"></span><span style="font-size:1.5rem;color:#888">/100</span></div>
+    <div class="reason" id="reason"></div>
+    <div class="source" id="source"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
