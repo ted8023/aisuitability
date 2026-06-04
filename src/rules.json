@@ -1,0 +1,60 @@
+{
+  "rules": [
+    {
+      "id": "impossible-action",
+      "category": "impossible",
+      "match": { "feature": "hasActionVerb" },
+      "score": 0,
+      "reason": "AI 无法执行真实世界操作（如订餐、开关设备、转账）"
+    },
+    {
+      "id": "cost-math",
+      "category": "cost",
+      "match": { "feature": "hasMath" },
+      "score": 60,
+      "reason": "AI 能算，但计算器更准更省"
+    },
+    {
+      "id": "cost-weather-stock",
+      "category": "cost",
+      "match": { "keywords": ["天气", "股价", "汇率", "几点", "路况"] },
+      "score": 65,
+      "reason": "AI 能回答，但搜索引擎更快更省，性价比不高"
+    },
+    {
+      "id": "cost-data-processing",
+      "category": "cost",
+      "match": { "keywords": ["排序", "去重", "求和", "数据透视", "整理表格"] },
+      "score": 55,
+      "reason": "AI 能处理，但 Excel / 表格工具更高效"
+    },
+    {
+      "id": "cost-survey",
+      "category": "cost",
+      "match": { "keywords": ["问卷", "满意度调查", "收集反馈", "投票"] },
+      "score": 55,
+      "reason": "AI 能帮忙，但问卷工具更合适"
+    },
+    {
+      "id": "risk-medical",
+      "category": "risk",
+      "match": { "keywords": ["吃什么药", "诊断", "病情", "症状", "剂量"] },
+      "score": 45,
+      "reason": "AI 可给参考，但医疗有风险，建议结合就医"
+    },
+    {
+      "id": "risk-legal",
+      "category": "risk",
+      "match": { "keywords": ["法律漏洞", "合同效力", "起诉", "违法吗", "判几年"] },
+      "score": 45,
+      "reason": "AI 可给参考，但法律判断有风险，建议咨询律师"
+    },
+    {
+      "id": "risk-finance",
+      "category": "risk",
+      "match": { "keywords": ["报税", "应缴税", "退税", "财务报表"] },
+      "score": 45,
+      "reason": "AI 可给参考，但精确财务计算建议用专业软件或会计"
+    }
+  ]
+}
