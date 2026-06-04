@@ -17,7 +17,15 @@ test('detects math expression', () => {
 });
 
 test('detects real-world action verb', () => {
-  expect(preprocess('帮我订一份外卖').features.hasActionVerb).toBe(true);
-  expect(preprocess('帮我把空调打开').features.hasActionVerb).toBe(true);
+  expect(preprocess('帮我订外卖').features.hasActionVerb).toBe(true);
+  expect(preprocess('帮我寄快递').features.hasActionVerb).toBe(true);
+  expect(preprocess('帮我转账给房东').features.hasActionVerb).toBe(true);
   expect(preprocess('解释什么是量子力学').features.hasActionVerb).toBe(false);
+});
+
+test('does NOT false-positive action verb on ordinary words', () => {
+  // 送 inside 输送 — an explanation task, must not be flagged as a real-world action
+  expect(preprocess('解释一下血液输送氧气的原理').features.hasActionVerb).toBe(false);
+  // 打开 inside 打开思路 — a writing task, must not be flagged
+  expect(preprocess('帮我打开思路写一篇文章').features.hasActionVerb).toBe(false);
 });

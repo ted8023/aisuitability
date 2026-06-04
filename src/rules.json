@@ -5,7 +5,7 @@
       "category": "impossible",
       "match": { "feature": "hasActionVerb" },
       "score": 0,
-      "reason": "AI 无法执行真实世界操作（如订餐、开关设备、转账）"
+      "reason": "AI 无法执行真实世界操作（如订餐、寄快递、转账、打车）"
     },
     {
       "id": "cost-math",
