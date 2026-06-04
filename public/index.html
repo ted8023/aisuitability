@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AI 适合度判断器 · AI-Fit-Judge</title>
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --surface-2: #f5f5f3;
+    --border: #ebebe8;
+    --border-strong: #dcdcd7;
+    --text: #1a1a17;
+    --text-2: #57574f;
+    --text-3: #8a8a80;
+    --accent: #1a1a17;
+    --accent-fg: #ffffff;
+    --ring-track: #ecece8;
+
+    /* score palette — we interpolate live in JS, these are anchors */
+    --c-low: #c8423a;   /* 0–30   */
+    --c-mid: #d68a2a;   /* 30–60  */
+    --c-high: #2f8a55;  /* 60–100 */
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-xl: 24px;
+
+    --shadow-1: 0 1px 2px rgba(20, 20, 17, 0.04), 0 1px 1px rgba(20, 20, 17, 0.03);
+    --shadow-2: 0 4px 20px -8px rgba(20, 20, 17, 0.10), 0 2px 6px -2px rgba(20, 20, 17, 0.06);
+    --shadow-3: 0 20px 60px -20px rgba(20, 20, 17, 0.18), 0 6px 16px -6px rgba(20, 20, 17, 0.08);
+
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0e0d;
+      --surface: #161614;
+      --surface-2: #1d1d1b;
+      --border: #262623;
+      --border-strong: #34342f;
+      --text: #f3f3ef;
+      --text-2: #a8a89e;
+      --text-3: #6f6f66;
+      --accent: #f3f3ef;
+      --accent-fg: #0e0e0d;
+      --ring-track: #262623;
+
+      --c-low: #e26a62;
+      --c-mid: #e9a14a;
+      --c-high: #5cb37e;
+
+      --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+      --shadow-2: 0 6px 24px -8px rgba(0,0,0,0.55), 0 2px 6px -2px rgba(0,0,0,0.4);
+      --shadow-3: 0 30px 80px -20px rgba(0,0,0,0.7), 0 10px 24px -8px rgba(0,0,0,0.5);
+    }
+  }
+
+  /* ---------- Base ---------- */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Subtle background grain — light dotted texture */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.025) 1px, transparent 0);
+    background-size: 22px 22px;
+    z-index: 0;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
+  }
+  @media (prefers-color-scheme: dark) {
+    body::before {
+      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 0);
+    }
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 20px 80px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 680px;
+  }
+
+  /* ---------- Header ---------- */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-2);
+    margin-bottom: 36px;
+  }
+  .brand .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--text) 12%, transparent);
+  }
+  .brand .label {
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .brand .sep {
+    color: var(--text-3);
+  }
+
+  h1 {
+    font-size: clamp(28px, 4.4vw, 36px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .subtitle {
+    font-size: 15px;
+    color: var(--text-2);
+    margin: 0 0 36px;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  .subtitle b {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* ---------- Input card ---------- */
+  .composer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 6px;
+    box-shadow: var(--shadow-2);
+    transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease);
+  }
+  .composer:focus-within {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-2), 0 0 0 4px color-mix(in oklab, var(--text) 6%, transparent);
+  }
+
+  .composer-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 88px;
+    max-height: 240px;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 16px;
+    line-height: 1.55;
+    padding: 14px 16px 8px;
+    border-radius: var(--radius-md);
+  }
+  textarea::placeholder { color: var(--text-3); }
+
+  .composer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 8px 8px 14px;
+  }
+  .hint {
+    font-size: 12.5px;
+    color: var(--text-3);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  kbd {
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .btn {
+    appearance: none;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 120ms var(--ease), opacity 120ms var(--ease), background 160ms var(--ease);
+    letter-spacing: 0.01em;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  .btn .spinner {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in oklab, var(--accent-fg) 35%, transparent);
+    border-top-color: var(--accent-fg);
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .arrow {
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+  }
+
+  /* ---------- Examples ---------- */
+  .examples {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .examples-label {
+    font-size: 12.5px;
+    color: var(--text-3);
+    margin-right: 4px;
+  }
+  .chip {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-2);
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 140ms var(--ease);
+  }
+  .chip:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+    transform: translateY(-1px);
+  }
+  .chip:active { transform: translateY(0); }
+
+  /* ---------- Error ---------- */
+  .error {
+    margin-top: 20px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in oklab, var(--c-low) 30%, var(--border));
+    background: color-mix(in oklab, var(--c-low) 8%, var(--surface));
+    color: color-mix(in oklab, var(--c-low) 75%, var(--text));
+    font-size: 13.5px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    animation: fade-up 220ms var(--ease) both;
+  }
+  .error svg { flex-shrink: 0; margin-top: 2px; }
+
+  /* ---------- Result ---------- */
+  .result {
+    margin-top: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 28px;
+    box-shadow: var(--shadow-3);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 28px;
+    align-items: center;
+    animation: fade-up 380ms var(--ease) both;
+    position: relative;
+    overflow: hidden;
+  }
+  /* tinted top border that reflects the score color */
+  .result::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--score-color, var(--text));
+    opacity: 0.85;
+  }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Score ring */
+  .ring {
+    --size: 140px;
+    --thickness: 10px;
+    width: var(--size);
+    height: var(--size);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .ring svg {
+    width: 100%; height: 100%;
+    transform: rotate(-90deg);
+  }
+  .ring .track {
+    fill: none;
+    stroke: var(--ring-track);
+    stroke-width: var(--thickness);
+  }
+  .ring .progress {
+    fill: none;
+    stroke: var(--score-color, var(--text));
+    stroke-width: var(--thickness);
+    stroke-linecap: round;
+    transition: stroke 600ms var(--ease);
+  }
+  .ring .score-num {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--score-color, var(--text));
+    line-height: 1;
+    transition: color 600ms var(--ease);
+  }
+  .score-num .num {
+    font-size: 40px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .score-num .max {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+
+  /* Result body */
+  .result-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    width: fit-content;
+    background: color-mix(in oklab, var(--score-color, var(--text)) 12%, var(--surface));
+    color: var(--score-color, var(--text));
+    border: 1px solid color-mix(in oklab, var(--score-color, var(--text)) 22%, transparent);
+    transition: all 600ms var(--ease);
+  }
+  .verdict .pulse {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .reason {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.45;
+    color: var(--text);
+    letter-spacing: -0.005em;
+    text-wrap: pretty;
+  }
+  .source {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-3);
+    padding-top: 4px;
+    border-top: 1px dashed var(--border);
+    margin-top: 4px;
+    padding-top: 12px;
+  }
+  .source.rule { color: color-mix(in oklab, var(--c-high) 70%, var(--text-2)); }
+  .source.ai   { color: color-mix(in oklab, var(--text) 80%, transparent); }
+  .source svg { flex-shrink: 0; }
+
+  /* ---------- Footer ---------- */
+  .footer {
+    margin-top: 48px;
+    font-size: 12px;
+    color: var(--text-3);
+    text-align: center;
+  }
+  .footer code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    color: var(--text-2);
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 560px) {
+    .app { padding: 32px 16px 64px; }
+    .brand { margin-bottom: 24px; }
+    h1 { font-size: 26px; }
+    .subtitle { margin-bottom: 24px; font-size: 14.5px; }
+
+    .result {
+      grid-template-columns: 1fr;
+      gap: 20px;
+      padding: 22px;
+      text-align: left;
+    }
+    .ring {
+      --size: 116px;
+      --thickness: 9px;
+      margin: 0 auto;
+    }
+    .score-num .num { font-size: 34px; }
+    .reason { font-size: 15.5px; }
+    .composer-bar { flex-direction: row; }
+    .hint .kbd-hint { display: none; }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+  <main class="app">
+    <div class="container">
+      <div class="brand">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="label">AI-Fit-Judge</span>
+        <span class="sep">·</span>
+        <span>AI 适合度判断器</span>
+      </div>
+
+      <h1>这件事，真的值得用 AI 做吗？</h1>
+      <p class="subtitle">
+        输入你想做的事，得到一个 <b>0–100 的适合度评分</b>。帮你判断这件事
+        是该交给 AI，还是用搜索引擎、专业工具甚至双脚解决更划算。
+      </p>
+
+      <!-- ---------- Composer ---------- -->
+      <form class="composer" id="form" novalidate>
+        <div class="composer-inner">
+          <textarea
+            id="input"
+            rows="3"
+            placeholder="例如：帮我写一封道歉邮件"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="问题或项目描述"
+          ></textarea>
+          <div class="composer-bar">
+            <span class="hint">
+              <span class="kbd-hint"><kbd>⌘</kbd> + <kbd>Enter</kbd> 提交</span>
+            </span>
+            <button class="btn" type="submit" id="submit">
+              <span id="btn-label">判断</span>
+              <svg class="arrow" id="btn-arrow" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- ---------- Examples ---------- -->
+      <div class="examples" id="examples">
+        <span class="examples-label">试试：</span>
+        <!-- 示例覆盖三种典型场景：适合 / 边缘 / 不适合 -->
+        <button class="chip" type="button" data-example="帮我写一封因为项目延期向客户道歉的邮件，语气真诚但专业">
+          帮我写道歉邮件
+        </button>
+        <button class="chip" type="button" data-example="北京今天天气怎么样">
+          北京今天天气
+        </button>
+        <button class="chip" type="button" data-example="帮我订外卖，午餐送到公司前台">
+          帮我订外卖
+        </button>
+        <button class="chip" type="button" data-example="我头痛吃什么药">
+          头痛吃什么药
+        </button>
+      </div>
+
+      <!-- ---------- Error slot ---------- -->
+      <div id="error-slot" aria-live="polite"></div>
+
+      <!-- ---------- Result slot ---------- -->
+      <div id="result-slot" aria-live="polite"></div>
+
+      <p class="footer">
+        请求 <code>POST /api/evaluate</code> · 后端未启动时也能安全降级
+      </p>
+    </div>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+
+  // -------- Elements --------
+  const form        = document.getElementById('form');
+  const input       = document.getElementById('input');
+  const submitBtn   = document.getElementById('submit');
+  const btnLabel    = document.getElementById('btn-label');
+  const btnArrow    = document.getElementById('btn-arrow');
+  const examplesEl  = document.getElementById('examples');
+  const errorSlot   = document.getElementById('error-slot');
+  const resultSlot  = document.getElementById('result-slot');
+
+  let loading = false;
+  let lastReqId = 0;
+
+  // -------- Color interpolation (oklch-ish via simple stops) --------
+  // Reads current computed values of --c-low / --c-mid / --c-high so the
+  // palette adapts to dark mode automatically.
+  function getStops() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      low:  cs.getPropertyValue('--c-low').trim(),
+      mid:  cs.getPropertyValue('--c-mid').trim(),
+      high: cs.getPropertyValue('--c-high').trim(),
+    };
+  }
+  function hexToRgb(hex) {
+    const h = hex.replace('#','');
+    const n = parseInt(h.length === 3 ? h.split('').map(c=>c+c).join('') : h, 16);
+    return { r: (n>>16)&255, g: (n>>8)&255, b: n&255 };
+  }
+  function mix(a, b, t) {
+    return {
+      r: Math.round(a.r + (b.r - a.r) * t),
+      g: Math.round(a.g + (b.g - a.g) * t),
+      b: Math.round(a.b + (b.b - a.b) * t),
+    };
+  }
+  function rgbStr({r,g,b}) { return `rgb(${r}, ${g}, ${b})`; }
+  function colorForScore(score) {
+    const s = getStops();
+    const low  = hexToRgb(s.low);
+    const mid  = hexToRgb(s.mid);
+    const high = hexToRgb(s.high);
+    if (score <= 30) {
+      // 0-30: low → mid (slight shift toward mid at the top of this range)
+      return rgbStr(mix(low, mid, score / 30 * 0.35));
+    } else if (score <= 60) {
+      // 30-60: mid band
+      return rgbStr(mix(mid, mix(mid, high, 0.3), (score - 30) / 30));
+    } else {
+      // 60-100: → high
+      return rgbStr(mix(mix(mid, high, 0.6), high, (score - 60) / 40));
+    }
+  }
+
+  // -------- Verdict label --------
+  function verdictFor(score) {
+    if (score === 0)   return '别让 AI 做';
+    if (score < 30)    return '不太推荐';
+    if (score < 60)    return '可以，但有更优解';
+    if (score < 85)    return '推荐用 AI';
+    return '非常适合 AI';
+  }
+
+  // -------- Loading state --------
+  function setLoading(on) {
+    loading = on;
+    submitBtn.disabled = on;
+    input.disabled = on;
+    btnLabel.textContent = on ? '判断中…' : '判断';
+    if (on) {
+      btnArrow.outerHTML = '<span class="spinner" id="btn-arrow" aria-hidden="true"></span>';
+    } else {
+      const cur = document.getElementById('btn-arrow');
+      if (cur && cur.tagName !== 'svg') {
+        cur.outerHTML = '<svg class="arrow" id="btn-arrow" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+    }
+  }
+
+  // -------- Error rendering --------
+  function showError(msg) {
+    errorSlot.innerHTML = `
+      <div class="error" role="alert">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 4.5v4M8 11v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>${escapeHtml(msg)}</span>
+      </div>
+    `;
+  }
+  function clearError() { errorSlot.innerHTML = ''; }
+  function clearResult() { resultSlot.innerHTML = ''; }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  // -------- Result rendering --------
+  function renderResult({ score, reason, source }) {
+    const safeScore = Math.max(0, Math.min(100, Math.round(score)));
+    const color = colorForScore(safeScore);
+    const verdict = verdictFor(safeScore);
+
+    // Ring geometry
+    const r = 56;
+    const c = 2 * Math.PI * r; // circumference
+
+    const sourceMarkup = source === 'rule'
+      ? `<span class="source rule">
+           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+             <path d="M3 7.5l2.5 2.5L11 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>
+           规则判断 · 未消耗 token
+         </span>`
+      : `<span class="source ai">
+           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+             <path d="M8 1L3 8h3l-1 5 5-7H7l1-5z" fill="currentColor"/>
+           </svg>
+           AI 判断
+         </span>`;
+
+    resultSlot.innerHTML = `
+      <section class="result" style="--score-color: ${color}">
+        <div class="ring" aria-label="评分 ${safeScore} / 100">
+          <svg viewBox="0 0 140 140" role="img" aria-hidden="true">
+            <circle class="track" cx="70" cy="70" r="${r}"></circle>
+            <circle class="progress" cx="70" cy="70" r="${r}"
+                    stroke-dasharray="${c.toFixed(2)}"
+                    stroke-dashoffset="${c.toFixed(2)}"
+                    id="ring-progress"></circle>
+          </svg>
+          <div class="score-num">
+            <span class="num" id="score-num">0</span>
+            <span class="max">/ 100</span>
+          </div>
+        </div>
+        <div class="result-body">
+          <span class="verdict"><span class="pulse" aria-hidden="true"></span>${escapeHtml(verdict)}</span>
+          <p class="reason">${escapeHtml(reason || '')}</p>
+          ${sourceMarkup}
+        </div>
+      </section>
+    `;
+
+    // Animate number + ring from 0 → score
+    animateScore(safeScore, c);
+  }
+
+  function animateScore(target, circumference) {
+    const numEl  = document.getElementById('score-num');
+    const ringEl = document.getElementById('ring-progress');
+    if (!numEl || !ringEl) return;
+
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      numEl.textContent = target;
+      ringEl.style.strokeDashoffset = (circumference * (1 - target / 100)).toFixed(2);
+      return;
+    }
+
+    const duration = 900; // ms
+    const start = performance.now();
+    const ease = t => 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+    function frame(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const e = ease(t);
+      const v = target * e;
+      numEl.textContent = Math.round(v);
+      ringEl.style.strokeDashoffset = (circumference * (1 - v / 100)).toFixed(2);
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // -------- Submit flow --------
+  async function evaluate(text) {
+    clearError();
+
+    if (!text || !text.trim()) {
+      showError('请输入一个问题或项目描述');
+      input.focus();
+      return;
+    }
+
+    const reqId = ++lastReqId;
+    setLoading(true);
+    // Keep prior result visible while loading? We clear it for a cleaner pass.
+    clearResult();
+
+    try {
+      const res = await fetch('/api/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.trim() }),
+      });
+
+      // Try to parse JSON either way — backend may return JSON on errors too.
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* non-json */ }
+
+      if (reqId !== lastReqId) return; // stale
+
+      if (!res.ok) {
+        const msg = (data && data.error) ? data.error : `请求失败（HTTP ${res.status}）`;
+        showError(msg);
+        return;
+      }
+      if (!data || typeof data.score !== 'number') {
+        showError('返回数据格式不正确');
+        return;
+      }
+
+      renderResult({
+        score: data.score,
+        reason: data.reason || '',
+        source: data.source === 'ai' ? 'ai' : 'rule',
+      });
+    } catch (err) {
+      if (reqId !== lastReqId) return;
+      // Network / CORS / backend not running
+      showError('网络错误，请重试');
+    } finally {
+      if (reqId === lastReqId) setLoading(false);
+    }
+  }
+
+  // -------- Wiring --------
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (loading) return;
+    evaluate(input.value);
+  });
+
+  // Cmd/Ctrl + Enter to submit from anywhere in the textarea
+  input.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  // Example chips: fill + auto-submit
+  examplesEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    const text = btn.getAttribute('data-example') || '';
+    input.value = text;
+    input.focus();
+    // Smooth UX: small beat so the value paints before the spinner appears
+    requestAnimationFrame(() => evaluate(text));
+  });
+
+  // Auto-grow textarea (subtle, capped via CSS max-height)
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 240) + 'px';
+  });
+
+  // Initial focus on desktop only
+  if (matchMedia('(min-width: 720px)').matches) {
+    setTimeout(() => input.focus(), 150);
+  }
+})();
+</script>
+</body>
+</html>
